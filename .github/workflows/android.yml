@@ -1,9 +1,8 @@
-name: Build OpenRadar APK
+name: Build Android APK
 
 on:
   push:
-    branches:
-      - main
+    branches: [ "main" ]
 
 jobs:
   build:
@@ -19,19 +18,14 @@ jobs:
           distribution: temurin
           java-version: 17
 
-      - name: Setup Android SDK
-        uses: android-actions/setup-android@v3
+      - name: Grant execute permission for gradlew
+        run: chmod +x gradlew
 
-      - name: Create gradle wrapper
-        run: |
-          gradle wrapper
-
-      - name: Build APK
-        run: |
-          ./gradlew assembleRelease
+      - name: Build Debug APK
+        run: ./gradlew assembleDebug
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: openradar-apk
-          path: app/build/outputs/apk/release/app-release.apk
+          name: openradar-debug-apk
+          path: app/build/outputs/apk/debug/app-debug.apk
