@@ -1,21 +1,29 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     package="com.openradar.app">
 
-    <!-- Internet -->
+    <!-- ============================= -->
+    <!-- PERMISSIONS -->
+    <!-- ============================= -->
+
+    <!-- Internet untuk akses localhost -->
     <uses-permission android:name="android.permission.INTERNET"/>
 
-    <!-- Overlay -->
+    <!-- Floating overlay -->
     <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW"/>
 
-    <!-- Foreground Service -->
+    <!-- Foreground service -->
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE"/>
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC"/>
 
-    <!-- Android 13+ Notification -->
+    <!-- Android 13+ notification permission -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>
 
-    <!-- Keep CPU awake -->
+    <!-- Prevent CPU sleep -->
     <uses-permission android:name="android.permission.WAKE_LOCK"/>
+
+    <!-- ============================= -->
+    <!-- APPLICATION -->
+    <!-- ============================= -->
 
     <application
         android:allowBackup="true"
@@ -23,6 +31,10 @@
         android:networkSecurityConfig="@xml/network_security_config"
         android:label="OpenRadar"
         android:theme="@style/Theme.Material3.DayNight.NoActionBar">
+
+        <!-- ============================= -->
+        <!-- MAIN ACTIVITY -->
+        <!-- ============================= -->
 
         <activity
             android:name=".MainActivity"
@@ -36,11 +48,22 @@
 
         </activity>
 
-        <!-- Foreground Overlay Service -->
+        <!-- ============================= -->
+        <!-- BACKEND FOREGROUND SERVICE -->
+        <!-- ============================= -->
+
         <service
-            android:name=".OverlayService"
+            android:name=".RadarService"
             android:exported="false"
             android:foregroundServiceType="dataSync" />
+
+        <!-- ============================= -->
+        <!-- FLOATING OVERLAY SERVICE -->
+        <!-- ============================= -->
+
+        <service
+            android:name=".OverlayService"
+            android:exported="false" />
 
     </application>
 
