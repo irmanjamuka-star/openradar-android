@@ -1,6 +1,6 @@
 package com.openradar.app
 
-import android.app.Service
+import android.app.*
 import android.content.Context
 import android.content.Intent
 import android.graphics.PixelFormat
@@ -8,23 +8,21 @@ import android.os.Build
 import android.os.IBinder
 import android.provider.Settings
 import android.view.*
-import android.webkit.WebSettings
 import android.webkit.WebView
 import android.webkit.WebViewClient
-import android.widget.FrameLayout
-import kotlin.math.abs
+import android.widget.ImageButton
+import android.widget.LinearLayout
+import android.widget.SeekBar
+import androidx.core.app.NotificationCompat
+import java.io.File
+import java.io.FileOutputStream
 
 class OverlayService : Service() {
 
     private lateinit var windowManager: WindowManager
-    private lateinit var overlayView: FrameLayout
+    private lateinit var overlayView: View
     private lateinit var webView: WebView
-    private lateinit var params: WindowManager.LayoutParams
-
-    private var initialX = 0
-    private var initialY = 0
-    private var initialTouchX = 0f
-    private var initialTouchY = 0f
+    private var backendProcess: Process? = null
 
     override fun onCreate() {
         super.onCreate()
@@ -34,107 +32,182 @@ class OverlayService : Service() {
             return
         }
 
-        windowManager = getSystemService(Context.WINDOW_SERVICE) as WindowManager
-
+        startForegroundNotification()
+        startBackend()
         createOverlay()
     }
 
+    // ================================
+    // FOREGROUND NOTIFICATION
+    // ================================
+    private fun startForegroundNotification() {
+        val channelId = "radar_overlay_channel"
+
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            val channel = NotificationChannel(
+                channelId,
+                "OpenRadar Background",
+                NotificationManager.IMPORTANCE_LOW
+            )
+            val manager = getSystemService(NotificationManager::class.java)
+            manager.createNotificationChannel(channel)
+        }
+
+        val notification = NotificationCompat.Builder(this, channelId)
+            .setContentTitle("OpenRadar Running")
+            .setContentText("Radar aktif sebagai overlay")
+            .setSmallIcon(android.R.drawable.ic_dialog_info)
+            .build()
+
+        startForeground(1, notification)
+    }
+
+    // ================================
+    // BACKEND START
+    // ================================
+    private fun startBackend() {
+        try {
+            val binaryName = "openradar-android-prod"
+            val outFile = File(filesDir, binaryName)
+
+            if (!outFile.exists()) {
+                assets.open(binaryName).use { input ->
+                    FileOutputStream(outFile).use { output ->
+                        input.copyTo(output)
+                    }
+                }
+                outFile.setExecutable(true)
+            }
+
+            backendProcess = ProcessBuilder(outFile.absolutePath)
+                .redirectErrorStream(true)
+                .start()
+
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+    }
+
+    private fun restartBackend() {
+        backendProcess?.destroy()
+        startBackend()
+        webView.postDelayed({
+            webView.reload()
+        }, 1500)
+    }
+
+    // ================================
+    // CREATE OVERLAY UI
+    // ================================
     private fun createOverlay() {
+        windowManager = getSystemService(WINDOW_SERVICE) as WindowManager
 
-        overlayView = FrameLayout(this)
+        val inflater = getSystemService(Context.LAYOUT_INFLATER_SERVICE) as LayoutInflater
+        overlayView = inflater.inflate(R.layout.overlay_layout, null)
 
-        webView = WebView(this)
+        webView = overlayView.findViewById(R.id.radarWebView)
 
-        val webSettings: WebSettings = webView.settings
-        webSettings.javaScriptEnabled = true
-        webSettings.domStorageEnabled = true
-        webSettings.allowFileAccess = true
-        webSettings.allowContentAccess = true
-        webSettings.mixedContentMode = WebSettings.MIXED_CONTENT_ALWAYS_ALLOW
-
-        webView.setBackgroundColor(0x00000000) // transparent
+        webView.settings.javaScriptEnabled = true
+        webView.settings.domStorageEnabled = true
         webView.webViewClient = WebViewClient()
 
-        webView.loadUrl("http://127.0.0.1:5001")
+        // Auto retry until backend ready
+        webView.postDelayed({
+            webView.loadUrl("http://127.0.0.1:5001")
+        }, 1500)
 
-        overlayView.addView(
-            webView,
-            FrameLayout.LayoutParams(
-                FrameLayout.LayoutParams.MATCH_PARENT,
-                FrameLayout.LayoutParams.MATCH_PARENT
-            )
-        )
+        setupControls()
 
-        val layoutFlag =
+        val params = WindowManager.LayoutParams(
+            800,
+            800,
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O)
                 WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
             else
-                WindowManager.LayoutParams.TYPE_PHONE
-
-        params = WindowManager.LayoutParams(
-            900, // width
-            900, // height
-            layoutFlag,
-            WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
-                    WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS,
+                WindowManager.LayoutParams.TYPE_PHONE,
+            WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE,
             PixelFormat.TRANSLUCENT
         )
 
         params.gravity = Gravity.TOP or Gravity.START
         params.x = 100
-        params.y = 100
-        params.alpha = 0.95f // opacity default
+        params.y = 200
 
         windowManager.addView(overlayView, params)
 
-        setupDrag()
+        makeDraggable(overlayView, params)
     }
 
-    private fun setupDrag() {
-        overlayView.setOnTouchListener { _, event ->
+    // ================================
+    // DRAG MOVEMENT
+    // ================================
+    private fun makeDraggable(view: View, params: WindowManager.LayoutParams) {
+        view.setOnTouchListener(object : View.OnTouchListener {
 
-            when (event.action) {
+            private var initialX = 0
+            private var initialY = 0
+            private var initialTouchX = 0f
+            private var initialTouchY = 0f
 
-                MotionEvent.ACTION_DOWN -> {
-                    initialX = params.x
-                    initialY = params.y
-                    initialTouchX = event.rawX
-                    initialTouchY = event.rawY
-                    return@setOnTouchListener true
-                }
+            override fun onTouch(v: View?, event: MotionEvent): Boolean {
+                when (event.action) {
 
-                MotionEvent.ACTION_MOVE -> {
-                    params.x = initialX + (event.rawX - initialTouchX).toInt()
-                    params.y = initialY + (event.rawY - initialTouchY).toInt()
-                    windowManager.updateViewLayout(overlayView, params)
-                    return@setOnTouchListener true
-                }
-
-                MotionEvent.ACTION_UP -> {
-                    val dx = abs(event.rawX - initialTouchX)
-                    val dy = abs(event.rawY - initialTouchY)
-                    if (dx < 10 && dy < 10) {
-                        // Tap event bisa dipakai nanti untuk toggle UI
+                    MotionEvent.ACTION_DOWN -> {
+                        initialX = params.x
+                        initialY = params.y
+                        initialTouchX = event.rawX
+                        initialTouchY = event.rawY
+                        return true
                     }
-                    return@setOnTouchListener true
+
+                    MotionEvent.ACTION_MOVE -> {
+                        params.x = initialX + (event.rawX - initialTouchX).toInt()
+                        params.y = initialY + (event.rawY - initialTouchY).toInt()
+                        windowManager.updateViewLayout(overlayView, params)
+                        return true
+                    }
                 }
+                return false
+            }
+        })
+    }
+
+    // ================================
+    // BUTTONS & OPACITY
+    // ================================
+    private fun setupControls() {
+
+        val closeBtn: ImageButton = overlayView.findViewById(R.id.btnClose)
+        val restartBtn: ImageButton = overlayView.findViewById(R.id.btnRestart)
+        val opacitySeek: SeekBar = overlayView.findViewById(R.id.seekOpacity)
+
+        closeBtn.setOnClickListener {
+            stopSelf()
+        }
+
+        restartBtn.setOnClickListener {
+            restartBackend()
+        }
+
+        opacitySeek.max = 100
+        opacitySeek.progress = 100
+
+        opacitySeek.setOnSeekBarChangeListener(object :
+            SeekBar.OnSeekBarChangeListener {
+
+            override fun onProgressChanged(seekBar: SeekBar?, progress: Int, fromUser: Boolean) {
+                overlayView.alpha = progress / 100f
             }
 
-            false
-        }
-    }
-
-    // OPTIONAL: bisa dipanggil nanti untuk ubah opacity
-    fun setOpacity(value: Float) {
-        params.alpha = value
-        windowManager.updateViewLayout(overlayView, params)
+            override fun onStartTrackingTouch(seekBar: SeekBar?) {}
+            override fun onStopTrackingTouch(seekBar: SeekBar?) {}
+        })
     }
 
     override fun onDestroy() {
         super.onDestroy()
-        if (::overlayView.isInitialized) {
-            windowManager.removeView(overlayView)
-        }
+        backendProcess?.destroy()
+        windowManager.removeView(overlayView)
     }
 
     override fun onBind(intent: Intent?): IBinder? = null
