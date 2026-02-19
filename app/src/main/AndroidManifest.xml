@@ -1,11 +1,10 @@
-<manifest xmlns:android="http://schemas.android.com/apk/res/android"
-    package="com.openradar.app">
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
     <!-- ============================= -->
     <!-- PERMISSIONS -->
     <!-- ============================= -->
 
-    <!-- Internet untuk akses localhost -->
+    <!-- Internet untuk localhost -->
     <uses-permission android:name="android.permission.INTERNET"/>
 
     <!-- Floating overlay -->
@@ -20,10 +19,6 @@
 
     <!-- Prevent CPU sleep -->
     <uses-permission android:name="android.permission.WAKE_LOCK"/>
-
-    <!-- ============================= -->
-    <!-- APPLICATION -->
-    <!-- ============================= -->
 
     <application
         android:allowBackup="true"
@@ -49,22 +44,13 @@
         </activity>
 
         <!-- ============================= -->
-        <!-- BACKEND FOREGROUND SERVICE -->
-        <!-- ============================= -->
-
-        <service
-            android:name=".RadarService"
-            android:exported="false"
-            android:foregroundServiceType="dataSync" />
-
-        <!-- ============================= -->
-        <!-- FLOATING OVERLAY SERVICE -->
+        <!-- OVERLAY + BACKEND SERVICE -->
         <!-- ============================= -->
 
         <service
             android:name=".OverlayService"
-            android:exported="false" />
+            android:exported="false"
+            android:foregroundServiceType="dataSync" />
 
     </application>
-
 </manifest>
