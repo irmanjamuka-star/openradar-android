@@ -13,33 +13,37 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
 
         if (!Settings.canDrawOverlays(this)) {
-            val intent = Intent(
-                Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
-                Uri.parse("package:$packageName")
-            )
-            startActivity(intent)
+            requestOverlayPermission()
+        } else {
+            startOverlayService()
             finish()
-            return
         }
-
-        startRadarService()
-        startOverlay()
-
-        finish() // Tutup activity, biar hanya overlay yang tampil
     }
 
-    private fun startRadarService() {
-        val serviceIntent = Intent(this, RadarService::class.java)
+    private fun requestOverlayPermission() {
+        val intent = Intent(
+            Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
+            Uri.parse("package:$packageName")
+        )
+        startActivity(intent)
+    }
+
+    override fun onResume() {
+        super.onResume()
+
+        if (Settings.canDrawOverlays(this)) {
+            startOverlayService()
+            finish()
+        }
+    }
+
+    private fun startOverlayService() {
+        val overlayIntent = Intent(this, OverlayService::class.java)
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            startForegroundService(serviceIntent)
+            startForegroundService(overlayIntent)
         } else {
-            startService(serviceIntent)
+            startService(overlayIntent)
         }
-    }
-
-    private fun startOverlay() {
-        val overlayIntent = Intent(this, OverlayService::class.java)
-        startService(overlayIntent)
     }
 }
