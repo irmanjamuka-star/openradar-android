@@ -5,58 +5,26 @@ import android.content.Intent
 import android.content.pm.ServiceInfo
 import android.os.Build
 import android.os.IBinder
-import java.io.File
-import java.io.FileOutputStream
 
 class RadarService : Service() {
 
-    private var process: Process? = null
-    private val binaryName = "openradar-android-prod"
+    companion object {
+        init {
+            System.loadLibrary("radar")
+        }
+    }
+
+    external fun StartRadar()
+    external fun StopRadar()
 
     override fun onCreate() {
         super.onCreate()
         startForegroundRadarService()
-        startBackend()
+        StartRadar()
     }
 
     // ===============================
-    // BACKEND START
-    // ===============================
-    private fun startBackend() {
-        try {
-            val outFile = File(filesDir, binaryName)
-
-            // Copy binary from assets if not exists
-            if (!outFile.exists()) {
-                assets.open(binaryName).use { input ->
-                    FileOutputStream(outFile).use { output ->
-                        input.copyTo(output)
-                    }
-                }
-            }
-
-            // Always ensure executable
-            outFile.setExecutable(true)
-
-            process = ProcessBuilder(outFile.absolutePath)
-                .redirectErrorStream(true)
-                .start()
-
-            // Auto-restart if backend crashes
-            Thread {
-                try {
-                    process?.waitFor()
-                    startBackend()
-                } catch (_: Exception) {}
-            }.start()
-
-        } catch (e: Exception) {
-            e.printStackTrace()
-        }
-    }
-
-    // ===============================
-    // FOREGROUND SERVICE (Android 12+ safe)
+    // FOREGROUND SERVICE (Android 12+ Safe)
     // ===============================
     private fun startForegroundRadarService() {
         val channelId = "radar_channel"
@@ -88,9 +56,7 @@ class RadarService : Service() {
         }
     }
 
-    // ===============================
-    // Prevent kill when swiped from recent
-    // ===============================
+    // Restart if user swipes app
     override fun onTaskRemoved(rootIntent: Intent?) {
         val restartIntent = Intent(applicationContext, RadarService::class.java)
         restartIntent.setPackage(packageName)
@@ -99,7 +65,7 @@ class RadarService : Service() {
     }
 
     override fun onDestroy() {
-        process?.destroy()
+        StopRadar()
         super.onDestroy()
     }
 
