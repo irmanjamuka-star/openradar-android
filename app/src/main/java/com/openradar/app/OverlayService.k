@@ -3,6 +3,7 @@ package com.openradar.app
 import android.app.*
 import android.content.Context
 import android.content.Intent
+import android.content.pm.ServiceInfo
 import android.graphics.PixelFormat
 import android.os.Build
 import android.os.IBinder
@@ -11,18 +12,23 @@ import android.view.*
 import android.webkit.WebView
 import android.webkit.WebViewClient
 import android.widget.ImageButton
-import android.widget.LinearLayout
 import android.widget.SeekBar
 import androidx.core.app.NotificationCompat
-import java.io.File
-import java.io.FileOutputStream
 
 class OverlayService : Service() {
+
+    companion object {
+        init {
+            System.loadLibrary("radar")
+        }
+    }
+
+    external fun StartRadar()
+    external fun StopRadar()
 
     private lateinit var windowManager: WindowManager
     private lateinit var overlayView: View
     private lateinit var webView: WebView
-    private var backendProcess: Process? = null
 
     override fun onCreate() {
         super.onCreate()
@@ -33,20 +39,21 @@ class OverlayService : Service() {
         }
 
         startForegroundNotification()
-        startBackend()
+        StartRadar()
         createOverlay()
     }
 
-    // ================================
-    // FOREGROUND NOTIFICATION
-    // ================================
+    // =====================================
+    // FOREGROUND SERVICE
+    // =====================================
     private fun startForegroundNotification() {
+
         val channelId = "radar_overlay_channel"
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             val channel = NotificationChannel(
                 channelId,
-                "OpenRadar Background",
+                "OpenRadar Overlay Service",
                 NotificationManager.IMPORTANCE_LOW
             )
             val manager = getSystemService(NotificationManager::class.java)
@@ -55,53 +62,27 @@ class OverlayService : Service() {
 
         val notification = NotificationCompat.Builder(this, channelId)
             .setContentTitle("OpenRadar Running")
-            .setContentText("Radar aktif sebagai overlay")
+            .setContentText("Radar aktif sebagai floating overlay")
             .setSmallIcon(android.R.drawable.ic_dialog_info)
             .build()
 
-        startForeground(1, notification)
-    }
-
-    // ================================
-    // BACKEND START
-    // ================================
-    private fun startBackend() {
-        try {
-            val binaryName = "openradar-android-prod"
-            val outFile = File(filesDir, binaryName)
-
-            if (!outFile.exists()) {
-                assets.open(binaryName).use { input ->
-                    FileOutputStream(outFile).use { output ->
-                        input.copyTo(output)
-                    }
-                }
-                outFile.setExecutable(true)
-            }
-
-            backendProcess = ProcessBuilder(outFile.absolutePath)
-                .redirectErrorStream(true)
-                .start()
-
-        } catch (e: Exception) {
-            e.printStackTrace()
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            startForeground(
+                1,
+                notification,
+                ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC
+            )
+        } else {
+            startForeground(1, notification)
         }
     }
 
-    private fun restartBackend() {
-        backendProcess?.destroy()
-        startBackend()
-        webView.postDelayed({
-            webView.reload()
-        }, 1500)
-    }
-
-    // ================================
+    // =====================================
     // CREATE OVERLAY UI
-    // ================================
+    // =====================================
     private fun createOverlay() {
-        windowManager = getSystemService(WINDOW_SERVICE) as WindowManager
 
+        windowManager = getSystemService(WINDOW_SERVICE) as WindowManager
         val inflater = getSystemService(Context.LAYOUT_INFLATER_SERVICE) as LayoutInflater
         overlayView = inflater.inflate(R.layout.overlay_layout, null)
 
@@ -111,7 +92,7 @@ class OverlayService : Service() {
         webView.settings.domStorageEnabled = true
         webView.webViewClient = WebViewClient()
 
-        // Auto retry until backend ready
+        // Load radar setelah backend siap
         webView.postDelayed({
             webView.loadUrl("http://127.0.0.1:5001")
         }, 1500)
@@ -134,14 +115,14 @@ class OverlayService : Service() {
         params.y = 200
 
         windowManager.addView(overlayView, params)
-
         makeDraggable(overlayView, params)
     }
 
-    // ================================
-    // DRAG MOVEMENT
-    // ================================
+    // =====================================
+    // DRAG SUPPORT
+    // =====================================
     private fun makeDraggable(view: View, params: WindowManager.LayoutParams) {
+
         view.setOnTouchListener(object : View.OnTouchListener {
 
             private var initialX = 0
@@ -150,6 +131,7 @@ class OverlayService : Service() {
             private var initialTouchY = 0f
 
             override fun onTouch(v: View?, event: MotionEvent): Boolean {
+
                 when (event.action) {
 
                     MotionEvent.ACTION_DOWN -> {
@@ -167,26 +149,22 @@ class OverlayService : Service() {
                         return true
                     }
                 }
+
                 return false
             }
         })
     }
 
-    // ================================
-    // BUTTONS & OPACITY
-    // ================================
+    // =====================================
+    // CONTROLS (Close + Opacity)
+    // =====================================
     private fun setupControls() {
 
         val closeBtn: ImageButton = overlayView.findViewById(R.id.btnClose)
-        val restartBtn: ImageButton = overlayView.findViewById(R.id.btnRestart)
         val opacitySeek: SeekBar = overlayView.findViewById(R.id.seekOpacity)
 
         closeBtn.setOnClickListener {
             stopSelf()
-        }
-
-        restartBtn.setOnClickListener {
-            restartBackend()
         }
 
         opacitySeek.max = 100
@@ -205,9 +183,9 @@ class OverlayService : Service() {
     }
 
     override fun onDestroy() {
-        super.onDestroy()
-        backendProcess?.destroy()
+        StopRadar()
         windowManager.removeView(overlayView)
+        super.onDestroy()
     }
 
     override fun onBind(intent: Intent?): IBinder? = null
